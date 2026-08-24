@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from ..preprocessing.type_detect import MediaType, detect_media_type
 
 
@@ -90,6 +92,16 @@ class ForensicOrchestrator:
             wav = vpipe.extract_audio(path)
             areport = self._get("audio").analyze(wav) if wav is not None else None
             fused = self.fuse_video_audio(vreport, areport)
+            if wav is not None:
+                from ..models.video.lipsync import lipsync_score
+                from ..preprocessing.video_ops import extract_frames, crop_largest_face
+
+                try:
+                    frames = extract_frames(path, num_frames=16, size=224)
+                    crops = np.stack([crop_largest_face(f, size=224) for f in frames])
+                    fused["lipsync"] = lipsync_score(crops, wav)
+                except Exception:
+                    fused["lipsync"] = None
             fused["modality"] = "video"
             report = fused
         else:

@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ...preprocessing.image_ops import load_image, compute_ela, srm_residuals, dct_features
+from ...preprocessing.image_ops import (load_image, compute_ela, srm_residuals,
+                                        dct_features, prnu_residual)
 from .dual_branch import DualBranchImageForensics, CLASS_NAMES
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -35,7 +36,8 @@ class ImagePipeline:
 
         ela = cv2.resize(ela, (self.input_size, self.input_size))
         dct = dct_features(load_image(path))  # native-res blocks for real JPEG stats
-        artifacts = np.concatenate([ela, srm], axis=-1)  # H,W,6
+        prnu = prnu_residual(rgb)
+        artifacts = np.concatenate([ela, srm, prnu], axis=-1)  # H,W,7
 
         rgb_n = (rgb - IMAGENET_MEAN) / IMAGENET_STD
         to_t = lambda a: torch.from_numpy(np.ascontiguousarray(a.transpose(2, 0, 1)))[None]

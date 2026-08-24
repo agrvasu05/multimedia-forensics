@@ -1,0 +1,36 @@
+# DVC pipeline (plan §8.5: dataset/pipeline versioning for reproducibility).
+# Initialize with `dvc init`, track raw data with `dvc add data/<modality>`,
+# then `dvc repro` re-runs only the stages whose data or code changed.
+stages:
+  train_image:
+    cmd: python -m mmforensics.training.train_image --data data/image --out checkpoints
+    deps:
+      - data/image
+      - mmforensics/models/image
+      - mmforensics/training/train_image.py
+    outs:
+      - checkpoints/image.pt
+  train_video:
+    cmd: python -m mmforensics.training.train_video --data data/video --out checkpoints
+    deps:
+      - data/video
+      - mmforensics/models/video
+      - mmforensics/training/train_video.py
+    outs:
+      - checkpoints/video.pt
+  train_text:
+    cmd: python -m mmforensics.training.train_text --data data/text --out checkpoints/text
+    deps:
+      - data/text
+      - mmforensics/models/text
+      - mmforensics/training/train_text.py
+    outs:
+      - checkpoints/text
+  train_audio:
+    cmd: python -m mmforensics.training.train_audio --data data/audio --out checkpoints
+    deps:
+      - data/audio
+      - mmforensics/models/audio
+      - mmforensics/training/train_audio.py
+    outs:
+      - checkpoints/audio.pt

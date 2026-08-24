@@ -13,6 +13,7 @@ datasets
 opencv-python-headless
 albumentations
 pillow
+facenet-pytorch      # MTCNN face detection
 
 # Audio
 librosa>=0.10
@@ -37,6 +38,10 @@ python-multipart
 pyyaml
 tqdm
 filetype
+
+# Serving / export
+onnx
+onnxruntime
 
 # Experiment tracking (optional, imported lazily)
 # wandb

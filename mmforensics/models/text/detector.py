@@ -30,11 +30,17 @@ REFERENCE_LM = "gpt2"  # small, fast; swap for a larger LM for better curvature
 
 class TextPipeline:
     def __init__(self, checkpoint: str | Path | None = None, device: str | None = None,
-                 supervised_model: str = "roberta-base", reference_lm: str = REFERENCE_LM):
+                 supervised_model: str = "roberta-base", reference_lm: str = REFERENCE_LM,
+                 perturbation: str = "lexical"):
+        """perturbation: 'lexical' (fast word deletion/swap) or 't5'
+        (the paper's T5 mask-fill; downloads t5-small on first use and is
+        ~10x slower but produces more fluent perturbations)."""
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.reference_lm_name = reference_lm
+        self.perturbation = perturbation
         self._lm = None
         self._lm_tok = None
+        self._t5 = None
         self.supervised = None
         self.trained = False
         if checkpoint is not None:
@@ -71,12 +77,63 @@ class TextPipeline:
         return tok_lp.cpu().numpy(), ranks.cpu().numpy()
 
     # ---------------- branch 2: DetectGPT curvature ----------------
+    def _lexical_perturb(self, words: list[str], mask_frac: float,
+                         rng: random.Random) -> str:
+        w = words[:]
+        n_edit = max(1, int(len(w) * mask_frac))
+        for _ in range(n_edit):
+            i = rng.randrange(len(w))
+            if rng.random() < 0.5 and len(w) > 5:
+                w.pop(i)                       # deletion
+            else:
+                j = rng.randrange(len(w))
+                w[i], w[j] = w[j], w[i]        # swap
+        return " ".join(w)
+
+    def _t5_perturb(self, words: list[str], mask_frac: float,
+                    rng: random.Random) -> str | None:
+        """The paper's perturbation: mask random 2-word spans and let
+        T5 fill them, yielding fluent semantically-close rewrites."""
+        try:
+            if self._t5 is None:
+                from transformers import T5ForConditionalGeneration, T5TokenizerFast
+
+                self._t5_tok = T5TokenizerFast.from_pretrained("t5-small", legacy=False)
+                self._t5 = T5ForConditionalGeneration.from_pretrained(
+                    "t5-small").eval().to(self.device)
+            n_spans = min(max(1, int(len(words) * mask_frac / 2)), 20)
+            starts = sorted(rng.sample(range(len(words) - 1), min(n_spans, len(words) - 1)))
+            masked, sid, prev = [], 0, 0
+            for s in starts:
+                if s < prev:  # overlapping span
+                    continue
+                masked += words[prev:s] + [f"<extra_id_{sid}>"]
+                sid += 1
+                prev = s + 2
+            masked += words[prev:]
+            with torch.no_grad():
+                ids = self._t5_tok(" ".join(masked), return_tensors="pt",
+                                   truncation=True, max_length=512).input_ids.to(self.device)
+                out = self._t5.generate(ids, max_new_tokens=6 * sid + 8,
+                                        do_sample=True, top_p=0.95,
+                                        num_return_sequences=1)
+            fills = self._t5_tok.decode(out[0], skip_special_tokens=False)
+            # parse "<extra_id_0> fill0 <extra_id_1> fill1 ..."
+            result = " ".join(masked)
+            for k in range(sid):
+                seg = fills.split(f"<extra_id_{k}>")
+                fill = seg[1].split("<extra_id_")[0].strip() if len(seg) > 1 else ""
+                result = result.replace(f"<extra_id_{k}>", fill, 1)
+            return re.sub(r"\s+", " ", result).strip() or None
+        except Exception:
+            return None  # caller falls back to lexical
+
     def detectgpt_curvature(self, text: str, n_perturb: int = 8, mask_frac: float = 0.15,
                             seed: int = 0) -> float | None:
-        """Mean log-likelihood drop of word-dropout perturbations vs. the
-        original, normalized by the perturbation std (the DetectGPT statistic).
-        Positive & large => likely AI. Uses word deletion/swap as a cheap
-        stand-in for the T5 mask-fill used in the paper."""
+        """Mean log-likelihood drop of perturbed variants vs. the original,
+        normalized by the perturbation std (the DetectGPT statistic).
+        Positive & large => likely AI. Perturbation mode set at init:
+        'lexical' (fast) or 't5' (paper-faithful mask-fill)."""
         lp, _ = self._token_logprobs(text)
         if lp is None:
             return None
@@ -87,17 +144,12 @@ class TextPipeline:
             return None
         perturbed_scores = []
         for _ in range(n_perturb):
-            w = words[:]
-            n_edit = max(1, int(len(w) * mask_frac))
-            for _ in range(n_edit):
-                op = rng.random()
-                i = rng.randrange(len(w))
-                if op < 0.5 and len(w) > 5:
-                    w.pop(i)                       # deletion
-                else:
-                    j = rng.randrange(len(w))
-                    w[i], w[j] = w[j], w[i]        # swap
-            plp, _ = self._token_logprobs(" ".join(w))
+            variant = None
+            if self.perturbation == "t5":
+                variant = self._t5_perturb(words, mask_frac, rng)
+            if variant is None:
+                variant = self._lexical_perturb(words, mask_frac, rng)
+            plp, _ = self._token_logprobs(variant)
             if plp is not None:
                 perturbed_scores.append(float(plp.mean()))
         if not perturbed_scores:

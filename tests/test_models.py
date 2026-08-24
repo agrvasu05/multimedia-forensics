@@ -8,7 +8,7 @@ def test_dual_branch_image_forward():
 
     model = DualBranchImageForensics(backbone="resnet18", pretrained=False).eval()
     rgb = torch.randn(2, 3, 128, 128)
-    art = torch.randn(2, 6, 128, 128)
+    art = torch.randn(2, 7, 128, 128)
     dct = torch.randn(2, 18)
     logits, mask = model(rgb, art, dct)
     assert logits.shape == (2, 3)

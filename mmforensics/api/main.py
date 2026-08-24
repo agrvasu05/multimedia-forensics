@@ -55,6 +55,35 @@ def health():
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/models")
+def models():
+    """Model-version inventory: which checkpoints are deployed, their
+    training metadata, and available ONNX exports — the hook for A/B
+    testing new checkpoints against the deployed ones (plan §11)."""
+    import torch
+
+    out = {}
+    ckpt_dir = orchestrator.ckpt_dir
+    for modality in ["image", "video", "audio"]:
+        p = ckpt_dir / f"{modality}.pt"
+        info = {"deployed": p.exists(), "path": str(p)}
+        if p.exists():
+            try:
+                state = torch.load(p, map_location="cpu", weights_only=True)
+                info["epoch"] = state.get("epoch")
+                info["val_auc"] = state.get("val_auc")
+                info["val_eer"] = state.get("val_eer")
+                info["mtime"] = p.stat().st_mtime
+            except Exception as e:
+                info["error"] = str(e)
+        info["onnx_exports"] = [f.name for f in ckpt_dir.glob(f"{modality}*.onnx")]
+        out[modality] = info
+    text_dir = ckpt_dir / "text"
+    out["text"] = {"deployed": text_dir.is_dir(), "path": str(text_dir),
+                   "note": "zero-shot branches active regardless of checkpoint"}
+    return out
+
+
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     """Analyze any supported media file."""

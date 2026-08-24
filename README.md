@@ -5,8 +5,8 @@ synthetic content behind a single API:
 
 | Modality | Detects | Core models |
 |---|---|---|
-| 🖼 Image | Splicing, copy-move, retouching, GAN/diffusion images + pixel-level localization | Dual-branch: EfficientNet/ViT (RGB) + shallow CNN over ELA/SRM residuals + DCT stats + U-Net mask decoder |
-| 🎬 Video | Face-swap & reenactment deepfakes, temporal flicker, lip-sync mismatch (audio track cross-check) | Xception per-frame + temporal Transformer/Bi-LSTM + attention pooling |
+| 🖼 Image | Splicing, copy-move, retouching, GAN/diffusion images + pixel-level localization | Dual-branch: EfficientNet/ViT (RGB) + shallow CNN over ELA/SRM/PRNU residuals + DCT stats + U-Net mask decoder |
+| 🎬 Video | Face-swap & reenactment deepfakes, temporal flicker, lip-sync mismatch (motion/audio-envelope correlation + audio track cross-check) | MTCNN face crops + Xception per-frame + temporal Transformer/Bi-LSTM + attention pooling |
 | 📝 Text | LLM-generated, paraphrase-obfuscated, mixed-authorship text with span localization | RoBERTa/DeBERTa (supervised) + DetectGPT curvature + GLTR statistics + stylometry |
 | 🎵 Audio | TTS voice, voice cloning, AI-generated music | LCNN on LFCC + RawNet2 (raw waveform) + optional Wav2Vec2 + music CNN (chroma/spectral-contrast) |
 
@@ -89,6 +89,22 @@ The engine implements the plan's optimization setup: AdamW, cosine decay
 with warm-up, label smoothing, mixed precision, progressive backbone
 unfreezing, early stopping on validation AUC, and optional `--tracker
 wandb|mlflow` experiment logging (mirrored to a JSONL file either way).
+All four modalities have augmentation pipelines (JPEG/codec recompression,
+blur/color for images; per-frame recompression, frame dropout, noise for
+video; synonym substitution, sentence shuffling for text; noise, gain,
+pitch/tempo shift, reverb for audio). A `dvc.yaml` pipeline versions data
+→ checkpoint lineage (`dvc init && dvc repro`).
+
+## Export & serving extras
+
+```bash
+python scripts/export_onnx.py --modality all      # ONNX export + parity check
+curl localhost:8000/models                        # deployed checkpoint inventory (A/B hook)
+```
+
+The text pipeline's DetectGPT branch supports the paper-faithful T5
+mask-fill perturbation: `TextPipeline(perturbation="t5")` (downloads
+t5-small on first use; the default lexical mode is ~10× faster).
 
 ## Evaluation
 

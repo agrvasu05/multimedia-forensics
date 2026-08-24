@@ -39,7 +39,7 @@ def main():
         args.epochs, args.batch = 3, 4
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_ds = AudioSpoofDataset(args.data, "train")
+    train_ds = AudioSpoofDataset(args.data, "train", augment=not args.smoke)
     val_ds = AudioSpoofDataset(args.data, "val")
     if len(train_ds) == 0:
         raise SystemExit(f"No audio under {args.data}/train/ — run "

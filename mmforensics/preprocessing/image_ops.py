@@ -80,6 +80,20 @@ def srm_residuals(rgb: np.ndarray) -> np.ndarray:
     return np.stack(out, axis=-1).astype(np.float32)
 
 
+def prnu_residual(rgb: np.ndarray, sigma: float = 2.0) -> np.ndarray:
+    """Single-image PRNU-style sensor-noise residual: luminance minus a
+    Gaussian-denoised estimate. True PRNU fingerprinting averages residuals
+    over many images from one camera; the single-image residual still
+    exposes regions whose noise pattern breaks from the rest of the sensor
+    grid (splices from another camera, inpainted areas, GAN output).
+    Returns float32 HxWx1 in [0, 1]."""
+    from scipy.ndimage import gaussian_filter
+
+    gray = rgb @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    residual = gray - gaussian_filter(gray, sigma=sigma)
+    return (np.clip(residual, -0.1, 0.1)[..., None] * 5.0 + 0.5).astype(np.float32)
+
+
 def dct_features(rgb: np.ndarray, block: int = 8, n_coeffs: int = 9) -> np.ndarray:
     """Blockwise-DCT statistics that capture JPEG recompression / GAN
     frequency artifacts. Returns a fixed-length 1-D feature vector of

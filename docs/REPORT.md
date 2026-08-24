@@ -164,10 +164,30 @@ scripts pointed at a different `--data`).
 
 ## 7. Verification status
 
-- 15/15 unit + integration tests pass (`pytest`): preprocessing features,
-  all model forward passes, fusion rules, metrics, and live API calls for
-  text/image/audio uploads.
+- 24/24 unit + integration tests pass (`pytest`): preprocessing features
+  (incl. PRNU), all model forward passes, augmentations, lip-sync scoring,
+  fusion rules, metrics, ONNX export parity, and live API calls for
+  text/image/audio uploads plus the `/models` inventory endpoint.
 - All four `--smoke` training runs complete end to end and write checkpoints.
+
+### 7.1 Second-pass gap closure
+
+Items originally listed as stand-ins, now implemented:
+
+- **MTCNN face detection** (facenet-pytorch) with graceful fallback chain.
+- **PRNU-style sensor-noise residual** added as a 7th artifact channel.
+- **Augmentations for all four modalities** (§8.2): video per-frame
+  recompression/frame-dropout/noise/flip, audio noise/gain/pitch/tempo/
+  reverb, text synonym-substitution/sentence-shuffle/word-dropout.
+- **Lip-sync check** (`models/video/lipsync.py`): mouth-motion vs.
+  audio-envelope correlation over small lags, reported per video; a learned
+  SyncNet forward pass can drop in behind the same interface.
+- **T5 mask-fill perturbations** for DetectGPT (`perturbation="t5"`),
+  falling back to the fast lexical mode.
+- **ONNX export** (`scripts/export_onnx.py`) with onnxruntime parity
+  verification, and a **`/models` API endpoint** exposing deployed
+  checkpoint versions/metrics as the A/B-testing hook.
+- **DVC pipeline** (`dvc.yaml`) for data→checkpoint reproducibility.
 
 ## 8. Challenges & mitigations (plan §13)
 

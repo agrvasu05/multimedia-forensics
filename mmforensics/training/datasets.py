@@ -21,7 +21,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..preprocessing.image_ops import compute_ela, srm_residuals, dct_features
+from ..preprocessing.image_ops import (compute_ela, srm_residuals, dct_features,
+                                       prnu_residual)
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -72,8 +73,9 @@ class ImageForensicsDataset(Dataset):
         ela = compute_ela(img)
         srm = srm_residuals(img)
         dct = dct_features(img)
+        prnu = prnu_residual(img)
         rgb_n = (img - IMAGENET_MEAN) / IMAGENET_STD
-        artifacts = np.concatenate([ela, srm], axis=-1)
+        artifacts = np.concatenate([ela, srm, prnu], axis=-1)
         return (_to_chw(rgb_n), _to_chw(artifacts), torch.from_numpy(dct),
                 torch.tensor(label), torch.from_numpy(m)[None])
 
@@ -93,11 +95,15 @@ def _image_augment(size: int):
 
 class VideoFramesDataset(Dataset):
     """Yields (frames (T,3,H,W), label) from pre-extracted frame folders:
-    data/video/<split>/<class>/<clip_id>/*.jpg  (class in {real, deepfake})."""
+    data/video/<split>/<class>/<clip_id>/*.jpg  (class in {real, deepfake}).
+
+    Augmentations per plan §8.2: JPEG recompression (H.264-CRF stand-in
+    applied per frame), random frame dropout, additive noise, clip-level
+    horizontal flip."""
 
     def __init__(self, root: str | Path, split: str = "train",
-                 num_frames: int = 8, size: int = 160):
-        self.num_frames, self.size = num_frames, size
+                 num_frames: int = 8, size: int = 160, augment: bool = False):
+        self.num_frames, self.size, self.augment = num_frames, size, augment
         self.items: list[tuple[Path, int]] = []
         base = Path(root) / split
         for cls, idx in {"real": 0, "deepfake": 1}.items():
@@ -114,19 +120,72 @@ class VideoFramesDataset(Dataset):
 
         frames = sorted(clip_dir.glob("*.jpg")) + sorted(clip_dir.glob("*.png"))
         idxs = np.linspace(0, len(frames) - 1, self.num_frames).astype(int)
+        rng = np.random.default_rng()
+        flip = self.augment and rng.random() < 0.5
+        jpeg_q = int(rng.integers(35, 90)) if (self.augment and rng.random() < 0.5) else None
         stack = []
         for j in idxs:
             img = np.asarray(Image.open(frames[j]).convert("RGB")
                              .resize((self.size, self.size)), dtype=np.float32) / 255.0
+            if flip:
+                img = img[:, ::-1]
+            if jpeg_q is not None:
+                img = _jpeg_roundtrip(img, jpeg_q)
+            if self.augment and rng.random() < 0.3:
+                img = np.clip(img + rng.normal(0, 0.02, img.shape), 0, 1)
             stack.append((img - IMAGENET_MEAN) / IMAGENET_STD)
+        if self.augment and rng.random() < 0.3:  # frame dropout: repeat previous
+            k = int(rng.integers(1, self.num_frames))
+            stack[k] = stack[k - 1]
         clip = np.stack(stack).transpose(0, 3, 1, 2)
-        return torch.from_numpy(clip).float(), torch.tensor(label)
+        return torch.from_numpy(np.ascontiguousarray(clip)).float(), torch.tensor(label)
+
+
+def _jpeg_roundtrip(img: np.ndarray, quality: int) -> np.ndarray:
+    """Compress-decompress a [0,1] float image to simulate codec artifacts."""
+    import io
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.fromarray((img * 255).astype(np.uint8)).save(buf, "JPEG", quality=quality)
+    buf.seek(0)
+    return np.asarray(Image.open(buf), dtype=np.float32) / 255.0
+
+
+# Small synonym table for paraphrase-robustness augmentation (plan §8.2);
+# back-translation via an MT model is the heavier documented alternative.
+_SYNONYMS = {
+    "important": "crucial", "significant": "notable", "numerous": "many",
+    "benefits": "advantages", "essential": "vital", "provides": "offers",
+    "various": "different", "rapidly": "quickly", "modern": "contemporary",
+    "big": "large", "small": "little", "good": "fine", "bad": "poor",
+    "help": "assist", "use": "employ", "show": "demonstrate", "need": "require",
+}
+
+
+def augment_text(text: str, rng: random.Random) -> str:
+    """Synonym substitution + sentence shuffling + light word dropout."""
+    from ..preprocessing.text_ops import split_sentences
+
+    words = text.split()
+    words = [_SYNONYMS.get(w.lower(), w) if rng.random() < 0.15 else w for w in words]
+    if rng.random() < 0.2 and len(words) > 12:
+        del words[rng.randrange(len(words))]
+    text = " ".join(words)
+    sents = split_sentences(text)
+    if rng.random() < 0.3 and len(sents) > 2:
+        i, j = rng.sample(range(len(sents)), 2)
+        sents[i], sents[j] = sents[j], sents[i]
+        text = " ".join(sents)
+    return text
 
 
 class TextForensicsDataset(Dataset):
     """Reads data/text/<split>/{human,ai}.jsonl with one {"text": ...} per line."""
 
-    def __init__(self, root: str | Path, split: str = "train"):
+    def __init__(self, root: str | Path, split: str = "train", augment: bool = False):
+        self.augment = augment
+        self._rng = random.Random(1234)
         self.samples: list[tuple[str, int]] = []
         base = Path(root) / split
         for cls, idx in {"human": 0, "ai": 1}.items():
@@ -141,17 +200,25 @@ class TextForensicsDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, i):
-        return self.samples[i]
+        text, label = self.samples[i]
+        if self.augment and self._rng.random() < 0.5:
+            text = augment_text(text, self._rng)
+        return text, label
 
 
 class AudioSpoofDataset(Dataset):
     """Yields (lfcc (1,F,T), waveform (L,), label) from
-    data/audio/<split>/{bonafide,spoof}/*.{wav,flac}."""
+    data/audio/<split>/{bonafide,spoof}/*.{wav,flac}.
+
+    Augmentations per plan §8.2: additive noise, random gain, pitch/tempo
+    shift, and synthetic reverberation (exponential-decay impulse response).
+    Codec compression is best applied offline (re-encode with ffmpeg)."""
 
     def __init__(self, root: str | Path, split: str = "train",
-                 sr: int = 16000, seconds: float = 4.0):
+                 sr: int = 16000, seconds: float = 4.0, augment: bool = False):
         from ..preprocessing.audio_ops import lfcc as _lfcc  # noqa: F401
 
+        self.augment = augment
         self.sr, self.samples_len = sr, int(sr * seconds)
         self.items: list[tuple[Path, int]] = []
         base = Path(root) / split
@@ -169,12 +236,40 @@ class AudioSpoofDataset(Dataset):
 
         path, label = self.items[i]
         wav = load_audio(path, sr=self.sr, max_seconds=self.samples_len / self.sr)
+        if self.augment:
+            wav = _augment_audio(wav, self.sr)
         if len(wav) < self.samples_len:
             wav = np.pad(wav, (0, self.samples_len - len(wav)))
         wav = wav[: self.samples_len]
         feat = lfcc(wav, sr=self.sr)
         return (torch.from_numpy(feat)[None], torch.from_numpy(wav),
                 torch.tensor(label))
+
+
+def _augment_audio(wav: np.ndarray, sr: int) -> np.ndarray:
+    rng = np.random.default_rng()
+    if rng.random() < 0.5:  # additive noise
+        wav = wav + rng.normal(0, rng.uniform(0.002, 0.02), wav.shape).astype(np.float32)
+    if rng.random() < 0.3:  # random gain
+        wav = wav * rng.uniform(0.6, 1.4)
+    if rng.random() < 0.25:  # pitch shift
+        import librosa
+
+        wav = librosa.effects.pitch_shift(y=wav, sr=sr,
+                                          n_steps=float(rng.uniform(-2, 2)))
+    if rng.random() < 0.25:  # tempo shift
+        import librosa
+
+        wav = librosa.effects.time_stretch(y=wav, rate=float(rng.uniform(0.9, 1.1)))
+    if rng.random() < 0.25:  # synthetic reverb: exponential-decay IR
+        ir_len = int(sr * rng.uniform(0.05, 0.2))
+        ir = (rng.normal(0, 1, ir_len) * np.exp(-6 * np.arange(ir_len) / ir_len)).astype(np.float32)
+        ir[0] = 1.0
+        wav = np.convolve(wav, ir * 0.3, mode="full")[: len(wav)]
+    peak = np.abs(wav).max()
+    if peak > 1.0:
+        wav = wav / peak
+    return wav.astype(np.float32)
 
 
 # --------------------------------------------------------------------------
@@ -198,8 +293,9 @@ def make_synthetic_image_dataset(root: str | Path, n_per_class: int = 24, size: 
             Image.fromarray(base).save(root / split / "real" / f"r{k}.jpg", quality=90)
 
             tampered = base.copy()
-            x, y, w = rng.integers(20, size - 84), rng.integers(20, size - 84), 64
-            patch = _gradient_image(rng, 64)
+            w = min(64, size // 4)
+            x, y = rng.integers(0, size - w), rng.integers(0, size - w)
+            patch = _gradient_image(rng, w)
             tampered[y:y + w, x:x + w] = patch
             mask = np.zeros((size, size), dtype=np.uint8)
             mask[y:y + w, x:x + w] = 255

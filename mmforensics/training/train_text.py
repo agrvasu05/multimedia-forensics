@@ -45,7 +45,7 @@ def main():
     model = AutoModelForSequenceClassification.from_pretrained(
         args.model, num_labels=2).to(device)
 
-    train_ds = TextForensicsDataset(args.data, "train")
+    train_ds = TextForensicsDataset(args.data, "train", augment=not args.smoke)
     val_ds = TextForensicsDataset(args.data, "val")
     if len(train_ds) == 0:
         raise SystemExit(f"No jsonl data under {args.data}/train/ — run "

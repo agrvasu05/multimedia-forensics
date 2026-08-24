@@ -18,10 +18,10 @@ CLASS_NAMES = ["real", "tampered", "ai_generated"]
 
 
 class ArtifactCNN(nn.Module):
-    """Shallow CNN over stacked ELA(3) + SRM(3) maps. Keeps intermediate
-    feature maps for the localization decoder's skip connections."""
+    """Shallow CNN over stacked ELA(3) + SRM(3) + PRNU(1) maps. Keeps
+    intermediate feature maps for the localization decoder's skip connections."""
 
-    def __init__(self, in_ch: int = 6, width: int = 32):
+    def __init__(self, in_ch: int = 7, width: int = 32):
         super().__init__()
         self.block1 = self._block(in_ch, width)
         self.block2 = self._block(width, width * 2)
@@ -76,7 +76,7 @@ class DualBranchImageForensics(nn.Module):
 
         self.rgb = timm.create_model(backbone, pretrained=pretrained, num_classes=0)
         rgb_dim = self.rgb.num_features
-        self.artifact = ArtifactCNN(in_ch=6, width=width)
+        self.artifact = ArtifactCNN(in_ch=7, width=width)
         self.decoder = LocalizationDecoder(width=width)
         self.dct_proj = nn.Sequential(nn.Linear(dct_dim, 64), nn.ReLU(inplace=True))
         fused = rgb_dim + self.artifact.out_dim + 64
@@ -86,7 +86,7 @@ class DualBranchImageForensics(nn.Module):
         )
 
     def forward(self, rgb: torch.Tensor, artifacts: torch.Tensor, dct: torch.Tensor):
-        """rgb: (B,3,H,W); artifacts: (B,6,H,W) ELA+SRM stack; dct: (B,dct_dim).
+        """rgb: (B,3,H,W); artifacts: (B,7,H,W) ELA+SRM+PRNU stack; dct: (B,dct_dim).
 
         Returns (logits (B,C), mask_logits (B,1,H,W)).
         """

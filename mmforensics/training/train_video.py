@@ -51,7 +51,8 @@ def main():
         make_synthetic_video_dataset(args.data, n_per_class=6, frames=args.frames)
         args.epochs, args.batch, args.backbone = 2, 2, "resnet18"
 
-    train_ds = VideoFramesDataset(args.data, "train", num_frames=args.frames)
+    train_ds = VideoFramesDataset(args.data, "train", num_frames=args.frames,
+                                  augment=not args.smoke)
     val_ds = VideoFramesDataset(args.data, "val", num_frames=args.frames)
     if len(train_ds) == 0:
         raise SystemExit(f"No clips under {args.data}/train/ — run "

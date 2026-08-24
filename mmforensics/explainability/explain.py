@@ -75,6 +75,11 @@ def explain_report(report: dict) -> str:
             hi = sum(s > 0.5 for s in fs)
             parts.append(f"{hi}/{len(fs)} sampled face frames scored as manipulated; "
                          "temporal attention concentrated on the most inconsistent frames.")
+        ls = report.get("lipsync")
+        if ls and ls.get("mismatch"):
+            parts.append(f"Lip-sync check: mouth motion barely correlates with the "
+                         f"audio envelope (r={ls['sync_corr']:.2f}), suggesting the "
+                         "voice does not belong to the visible speech.")
         au = report.get("audio_stream")
         if au and au.get("p_spoof", 0) > 0.5:
             parts.append("The audio track independently scored as synthetic speech, "
