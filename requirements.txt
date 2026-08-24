@@ -1,0 +1,47 @@
+# Core deep learning
+torch>=2.2
+torchvision>=0.17
+torchaudio>=2.2
+timm>=0.9
+
+# NLP
+transformers>=4.40
+tokenizers
+datasets
+
+# Computer vision
+opencv-python-headless
+albumentations
+pillow
+
+# Audio
+librosa>=0.10
+soundfile
+
+# Science / metrics
+numpy
+scipy
+scikit-learn
+pandas
+
+# Explainability
+grad-cam
+captum
+
+# API
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Utilities
+pyyaml
+tqdm
+filetype
+
+# Experiment tracking (optional, imported lazily)
+# wandb
+# mlflow
+# dvc
+
+# Dev
+pytest

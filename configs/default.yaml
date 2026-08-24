@@ -1,0 +1,45 @@
+# Central configuration mirroring the project plan's optimization setup (§8.4)
+common:
+  optimizer: adamw
+  lr_schedule: cosine_warmup
+  label_smoothing: 0.05
+  early_stop_patience: 7
+  amp: true
+  checkpoint_dir: checkpoints
+
+image:
+  backbone: efficientnet_b4      # or vit_base_patch16_224 / swin_tiny
+  input_size: 380
+  batch_size: 16
+  lr: 3.0e-4
+  epochs: 30
+  loss: ce+dice                  # classification + localization mask
+  datasets: [casia2, columbia, coverage, nist_mfc, comofod, genimage, cifake, dffd]
+
+video:
+  backbone: xception             # FaceForensics++ baseline standard
+  temporal: transformer          # or bilstm
+  num_frames: 16
+  face_detector: haar            # swap: mtcnn / retinaface
+  batch_size: 8
+  lr: 1.0e-4
+  epochs: 20
+  curriculum: [dfdc, celeb_df]   # pretrain large -> fine-tune hard
+
+text:
+  supervised_model: roberta-base # or microsoft/deberta-v3-base
+  reference_lm: gpt2             # DetectGPT / GLTR reference model
+  max_length: 512
+  batch_size: 16
+  lr: 2.0e-5
+  epochs: 3
+  datasets: [gpt2_output, hc3, m4, turingbench, raid]
+
+audio:
+  sample_rate: 16000
+  branches: [lcnn_lfcc, rawnet2, wav2vec2]
+  clip_seconds: 4.0
+  batch_size: 16
+  lr: 1.0e-4
+  epochs: 30
+  datasets: [asvspoof2019, asvspoof2021, wavefake, fakeavceleb, add]
