@@ -8,6 +8,36 @@ version = "0.1.0"
 description = "Unified multimedia forensic forgery & tampering detection (image / video / text / audio)"
 requires-python = ">=3.10"
 readme = "README.md"
+dependencies = [
+    "albumentations>=2.0.8",
+    "captum>=0.9.0",
+    "datasets>=5.0.1",
+    "facenet-pytorch>=2.5.3",
+    "fastapi>=0.141.1",
+    "filetype>=1.2.0",
+    "grad-cam>=1.5.7",
+    "librosa>=0.10",
+    "numpy>=2.2.6",
+    "onnx>=1.22.0",
+    "onnxruntime>=1.24.3",
+    "opencv-python-headless>=5.0.0.93",
+    "pandas>=2.3.3",
+    "pillow>=12.3.0",
+    "pytest>=9.1.1",
+    "python-multipart>=0.0.32",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.15.3",
+    "soundfile>=0.14.0",
+    "timm>=0.9",
+    "tokenizers>=0.23.1",
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    "torchvision>=0.17",
+    "tqdm>=4.70.0",
+    "transformers>=4.40",
+    "uvicorn[standard]>=0.52.4",
+]
 
 [tool.setuptools.packages.find]
 include = ["mmforensics*"]

@@ -68,19 +68,26 @@ def cmd_fetch(name: str, data_root: Path):
     """Auto-fetch the handful of datasets with frictionless access."""
     name = name.lower()
     if name == "hc3":
-        from datasets import load_dataset
+        import json, random, urllib.request
 
-        ds = load_dataset("Hello-SimpleAI/HC3", "all", split="train")
+        url = "https://huggingface.co/datasets/Hello-SimpleAI/HC3/resolve/main/all.jsonl"
+        cache_path = data_root / "text" / "_hc3_cache.jsonl"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cache_path.exists():
+            print(f"Downloading HC3 all.jsonl ({url})...")
+            urllib.request.urlretrieve(url, cache_path)
+        else:
+            print(f"Using cached HC3 data at {cache_path}")
+        with open(cache_path, "r", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+
         out = data_root / "text"
-        import json, random
-
-        rows = list(ds)
         random.Random(0).shuffle(rows)
         cut = int(len(rows) * 0.9)
         for split, part in [("train", rows[:cut]), ("val", rows[cut:])]:
             (out / split).mkdir(parents=True, exist_ok=True)
-            with (out / split / "human.jsonl").open("w") as fh, \
-                 (out / split / "ai.jsonl").open("w") as fa:
+            with (out / split / "human.jsonl").open("w", encoding="utf-8") as fh, \
+                 (out / split / "ai.jsonl").open("w", encoding="utf-8") as fa:
                 for r in part:
                     for t in r.get("human_answers") or []:
                         if t.strip():

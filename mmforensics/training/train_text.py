@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 from .datasets import TextForensicsDataset, make_synthetic_text_dataset
@@ -69,7 +70,8 @@ def main():
     for epoch in range(args.epochs):
         model.train()
         total = 0.0
-        for enc, y in train_dl:
+        pbar = tqdm(train_dl, desc=f"Epoch {epoch+1}/{args.epochs} [Train]", leave=False)
+        for enc, y in pbar:
             enc, y = enc.to(device), y.to(device)
             loss = model(**enc, labels=y).loss
             opt.zero_grad(set_to_none=True)
@@ -77,17 +79,18 @@ def main():
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             sched.step()
-            total += float(loss)
+            total += float(loss.detach())
+            pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{sched.get_last_lr()[0]:.2e}")
         # eval
         model.eval()
         scores, labels = [], []
         with torch.no_grad():
-            for enc, y in val_dl:
+            for enc, y in tqdm(val_dl, desc=f"Epoch {epoch+1}/{args.epochs} [Val]  ", leave=False):
                 p = torch.softmax(model(**enc.to(device)).logits, dim=-1)[:, 1]
                 scores += p.cpu().tolist()
                 labels += y.tolist()
         m = summarize(np.array(labels), np.array(scores), prefix="val_")
-        print(f"[text] epoch {epoch}: loss={total / max(len(train_dl), 1):.4f} "
+        print(f"[text] epoch {epoch+1}/{args.epochs}: loss={total / max(len(train_dl), 1):.4f} "
               f"val_auc={m['val_auc']:.4f} val_f1={m['val_f1']:.4f}")
         if not np.isnan(m["val_auc"]) and m["val_auc"] > best_auc:
             best_auc = m["val_auc"]
