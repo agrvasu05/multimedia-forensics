@@ -14,6 +14,9 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..fusion import ForensicOrchestrator
@@ -28,6 +31,16 @@ app = FastAPI(
 )
 
 orchestrator = ForensicOrchestrator(checkpoint_dir=Path("checkpoints"))
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 def _jsonable(obj):
@@ -53,6 +66,11 @@ class TextRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok", "version": __version__}
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse("static/index.html")
 
 
 @app.get("/models")

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepVerify — AI Detection & Forensic Analysis</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css?v=3">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: { primary: '#020617', secondary: '#0F172A', card: '#1E293B' },
+            accent: { DEFAULT: '#22C55E', dim: '#166534' },
+            txt: { primary: '#F8FAFC', secondary: '#94A3B8', muted: '#64748B' },
+          },
+          fontFamily: {
+            sans: ['Fira Sans', 'sans-serif'],
+            mono: ['Fira Code', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .hero-gradient {
+      background: linear-gradient(135deg, #020617 0%, #0F172A 50%, #020617 100%);
+      position: relative;
+    }
+    .hero-gradient::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.08) 0%, transparent 60%);
+    }
+    .grid-pattern {
+      background-image:
+        linear-gradient(rgba(34,197,94,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,197,94,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .card-glow:hover {
+      box-shadow: 0 0 30px rgba(34,197,94,0.1), 0 0 60px rgba(34,197,94,0.05);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+    .status-dot.active { background: #22C55E; }
+    .status-dot.off { background: #64748B; animation: none; }
+    @keyframes scan {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+    .scanline {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(34,197,94,0.1), transparent);
+      animation: scan 4s linear infinite;
+      pointer-events: none;
+      z-index: 100;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .scanline, .status-dot { animation: none; }
+      .animate-slide-up { animation: none; opacity: 1; }
+    }
+  </style>
+</head>
+<body class="grid-pattern">
+  <div class="scanline"></div>
+
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 z-50 border-b border-txt-muted/20" style="background:rgba(2,6,23,0.9);backdrop-filter:blur(12px)">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M9 12l2 2 4-4"/>
+        </svg>
+        <span class="text-lg font-bold tracking-wide glow-green">DeepVerify</span>
+        <span class="text-xs font-mono text-txt-muted ml-1 hidden sm:inline">v0.1</span>
+      </div>
+      <nav class="flex items-center gap-6 text-sm">
+        <a href="#" class="text-accent font-medium">Text</a>
+        <a href="#" class="text-txt-muted hover:text-txt-secondary transition-colors">Image <span class="badge badge-construction ml-1 text-[10px]">COMING</span></a>
+        <a href="#" class="text-txt-muted hover:text-txt-secondary transition-colors">Video <span class="badge badge-construction ml-1 text-[10px]">COMING</span></a>
+        <a href="#" class="text-txt-muted hover:text-txt-secondary transition-colors">Audio <span class="badge badge-construction ml-1 text-[10px]">COMING</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero-gradient min-h-screen flex items-center pt-16">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 relative z-10">
+      <div class="animate-slide-up">
+        <div class="flex items-center gap-2 mb-6">
+          <div class="status-dot active"></div>
+          <span class="font-mono text-xs text-accent tracking-widest uppercase">Text Analysis Online</span>
+        </div>
+        <h1 class="hero-title text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6">
+          Detect AI-Generated<br>
+          <span class="text-accent glow-green">Text</span> with Precision
+        </h1>
+        <p class="text-txt-secondary text-lg max-w-2xl mb-10 leading-relaxed">
+          Analyze text for AI generation using supervised RoBERTa classification,
+          DetectGPT curvature, GLTR statistics, and stylometric features.
+          Trained on HC3 — <span class="font-mono text-accent">val AUC 1.0000</span>.
+        </p>
+
+        <!-- Analysis Form -->
+        <form id="analyze-form" class="mb-8">
+          <div class="relative">
+            <textarea
+              id="text-input"
+              class="input-field h-40 text-base"
+              placeholder="Paste suspicious text here... e.g. &quot;It is important to note that machine learning plays a significant role in modern society. Furthermore, machine learning offers numerous benefits for various industries.&quot;"
+              required
+              aria-label="Text to analyze"
+            ></textarea>
+          </div>
+          <div class="flex items-center gap-4 mt-4">
+            <button type="submit" id="submit-btn" class="btn-primary flex items-center gap-2">
+              <span>Analyze Text</span>
+              <span id="loading" class="loader" style="display:none;width:18px;height:18px;border-width:2px"></span>
+            </button>
+            <span id="error-msg" class="text-red-400 text-sm font-mono hidden"></span>
+          </div>
+        </form>
+
+        <div class="flex flex-wrap gap-6 text-sm text-txt-muted">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            <span>HC3-trained model</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <span>Real-time inference</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+            <span>4-branch analysis</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modalities Grid -->
+  <section class="py-20 border-t border-txt-muted/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="section-title text-center">Pipeline Coverage</div>
+      <h2 class="text-center text-2xl font-bold mb-12">Unified Forensic Analysis</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Text (active) -->
+        <div class="card card-glow border-accent/30 relative overflow-hidden">
+          <div class="absolute top-0 left-0 w-full h-1 bg-accent"></div>
+          <div class="flex items-center gap-2 mb-3">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <span class="font-bold">Text</span>
+            <span class="badge badge-human ml-auto text-[10px]">ONLINE</span>
+          </div>
+          <p class="text-txt-muted text-sm">RoBERTa + DetectGPT + GLTR + Stylometry</p>
+          <div class="mt-3 flex gap-1">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent">Supervised</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">Curvature</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400">GLTR</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-pink-500/10 text-pink-400">Style</span>
+          </div>
+        </div>
+        <!-- Image -->
+        <div class="card-glow card-construction">
+          <svg class="w-10 h-10 mx-auto text-txt-muted mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <p class="font-bold mb-1">Image</p>
+          <p class="text-txt-muted text-sm mb-3">Splicing, GAN/diffusion detection</p>
+          <span class="badge badge-construction mx-auto">IN CONSTRUCTION</span>
+        </div>
+        <!-- Video -->
+        <div class="card-glow card-construction">
+          <svg class="w-10 h-10 mx-auto text-txt-muted mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          <p class="font-bold mb-1">Video</p>
+          <p class="text-txt-muted text-sm mb-3">Deepfake, lip-sync, temporal</p>
+          <span class="badge badge-construction mx-auto">IN CONSTRUCTION</span>
+        </div>
+        <!-- Audio -->
+        <div class="card-glow card-construction">
+          <svg class="w-10 h-10 mx-auto text-txt-muted mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+          <p class="font-bold mb-1">Audio</p>
+          <p class="text-txt-muted text-sm mb-3">TTS, voice clone, music</p>
+          <span class="badge badge-construction mx-auto">IN CONSTRUCTION</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results Section -->
+  <section id="results" class="py-20 hidden">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="section-text flex items-center justify-between mb-8">
+        <div class="section-text flex items-center gap-2">
+          <div class="status-dot active"></div>
+          <span class="font-mono text-xs text-accent tracking-widest uppercase">Analysis Result</span>
+        </div>
+        <button onclick="document.getElementById('text-input').focus();document.getElementById('analyze-form').scrollIntoView({behavior:'smooth'})" class="text-sm text-accent hover:underline">Analyze another</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main result -->
+        <div class="lg:col-span-2 card glow-box scanlines relative overflow-hidden">
+          <div class="flex items-center justify-between mb-4">
+            <span id="result-label" class="badge badge-human text-base px-4 py-1">HUMAN</span>
+            <span class="text-txt-muted text-sm">Confidence</span>
+          </div>
+          <div class="flex items-end gap-4 mb-2">
+            <div class="text-3xl font-bold" id="result-confidence">--</div>
+            <div class="font-mono text-sm text-txt-muted mb-1">p_ai <span id="result-pai" class="text-accent">--</span></div>
+          </div>
+          <div class="score-bar h-2 mb-4">
+            <div id="score-fill" class="score-bar-fill" style="width:0%"></div>
+          </div>
+          <p id="explanation" class="text-txt-secondary text-sm leading-relaxed"></p>
+        </div>
+        <!-- Sidebar -->
+        <div class="card glow-box">
+          <div class="section-title">Branch Scores</div>
+          <div id="branch-list" class="space-y-3"></div>
+        </div>
+      </div>
+      <!-- Span localization -->
+      <div id="span-section" class="mt-6 hidden">
+        <div class="section-text">Span Localization</div>
+        <div id="span-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-txt-muted/10 py-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-txt-muted">
+      <div class="font-mono text-xs">DeepVerify — Multimedia Forensic Analysis</div>
+      <div class="flex items-center gap-4">
+        <span class="flex items-center gap-1"><span class="status-dot active" style="width:6px;height:6px"></span> Text model active</span>
+        <span class="flex items-center gap-1"><span class="status-dot off" style="width:6px;height:6px"></span> Image model</span>
+        <span class="flex items-center gap-1"><span class="status-dot off" style="width:6px;height:6px"></span> Video model</span>
+        <span class="flex items-center gap-1"><span class="status-dot off" style="width:6px;height:6px"></span> Audio model</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/js/app.js?v=3"></script>
+</body>
+</html>
