@@ -1,2 +1,0 @@
-train=76868 val=8563
-[text] epoch 1/4: loss=0.0537 val_auc=0.9999 val_f1=0.9959
