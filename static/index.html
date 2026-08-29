@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DeepVerify — AI Detection & Forensic Analysis</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/static/css/style.css?v=3">
+  <link rel="stylesheet" href="/static/css/style.css?v=9">
   <script>
     tailwind.config = {
       theme: {
@@ -84,7 +84,7 @@
       </div>
       <nav class="flex items-center gap-6 text-sm">
         <a href="#" class="text-accent font-medium">Text</a>
-        <a href="#" class="text-txt-muted hover:text-txt-secondary transition-colors">Image <span class="badge badge-construction ml-1 text-[10px]">COMING</span></a>
+        <a href="#" class="text-accent font-medium">Image</a>
         <a href="#" class="text-txt-muted hover:text-txt-secondary transition-colors">Video <span class="badge badge-construction ml-1 text-[10px]">COMING</span></a>
         <a href="#" class="text-txt-muted hover:text-txt-secondary transition-colors">Audio <span class="badge badge-construction ml-1 text-[10px]">COMING</span></a>
       </nav>
@@ -109,25 +109,90 @@
           Trained on HC3 — <span class="font-mono text-accent">val AUC 1.0000</span>.
         </p>
 
-        <!-- Analysis Form -->
-        <form id="analyze-form" class="mb-8">
-          <div class="relative">
-            <textarea
-              id="text-input"
-              class="input-field h-40 text-base"
-              placeholder="Paste suspicious text here... e.g. &quot;It is important to note that machine learning plays a significant role in modern society. Furthermore, machine learning offers numerous benefits for various industries.&quot;"
-              required
-              aria-label="Text to analyze"
-            ></textarea>
+        <!-- Analysis Form with Tabs -->
+        <div class="mb-8">
+          <div class="flex gap-1 mb-4 p-1 bg-bg-secondary rounded-lg w-fit border border-txt-muted/10">
+            <button type="button" id="tab-text" onclick="switchTab('text')" class="tab-btn active">Text Analysis</button>
+            <button type="button" id="tab-image" onclick="switchTab('image')" class="tab-btn">Image Analysis</button>
           </div>
-          <div class="flex items-center gap-4 mt-4">
-            <button type="submit" id="submit-btn" class="btn-primary flex items-center gap-2">
-              <span>Analyze Text</span>
-              <span id="loading" class="loader" style="display:none;width:18px;height:18px;border-width:2px"></span>
-            </button>
-            <span id="error-msg" class="text-red-400 text-sm font-mono hidden"></span>
-          </div>
-        </form>
+
+          <!-- Text Form -->
+          <form id="analyze-form" class="mb-0">
+            <div class="relative">
+              <textarea
+                id="text-input"
+                class="input-field h-40 text-base"
+                placeholder="Paste suspicious text here... e.g. &quot;It is important to note that machine learning plays a significant role in modern society.&quot;"
+                required
+                aria-label="Text to analyze"
+              ></textarea>
+            </div>
+            <div class="flex items-center gap-4 mt-4">
+              <button type="submit" id="submit-btn" class="btn-primary flex items-center gap-2">
+                <span>Analyze Text</span>
+                <span id="loading" class="loader" style="display:none;width:18px;height:18px;border-width:2px"></span>
+              </button>
+              <span id="error-msg" class="text-red-400 text-sm font-mono hidden"></span>
+            </div>
+          </form>
+
+          <!-- Image Form -->
+          <form id="image-form" style="display:none">
+            <div class="flex gap-1 mb-4 p-1 bg-bg-secondary rounded-lg w-fit border border-txt-muted/10">
+              <label class="tab-btn active" id="mode-ai-label">
+                <input type="radio" name="detect-mode" value="ai" checked class="hidden"> AI Detection
+              </label>
+              <label class="tab-btn" id="mode-tamper-label">
+                <input type="radio" name="detect-mode" value="tamper" class="hidden"> Tampering
+              </label>
+              <label class="tab-btn" id="mode-screen-label">
+                <input type="radio" name="detect-mode" value="screen" class="hidden"> Screen
+              </label>
+            </div>
+            <div id="drop-zone" class="input-field h-40 flex flex-col items-center justify-center cursor-pointer transition-all hover:border-accent/50">
+              <svg class="w-12 h-12 text-txt-muted mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              <p class="text-txt-muted text-sm">Drop image here or <span class="text-accent">click to browse</span></p>
+              <p class="text-txt-muted text-xs mt-1">JPG, PNG, WebP — max 10 MB</p>
+            </div>
+            <input type="file" id="image-input" accept="image/*" class="hidden">
+            <div id="image-preview-container" class="mt-4 hidden">
+              <div class="flex items-center gap-3 p-3 bg-bg-secondary rounded-lg border border-txt-muted/10">
+                <img id="image-preview" class="w-16 h-16 object-cover rounded" src="" alt="Preview">
+                <div class="flex-1 min-w-0">
+                  <p id="image-filename" class="text-sm text-txt-primary truncate"></p>
+                  <p id="image-size" class="text-xs text-txt-muted"></p>
+                </div>
+                <button type="button" onclick="clearImage()" class="text-txt-muted hover:text-red-400 text-sm">Remove</button>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 mt-4">
+              <button type="submit" id="image-submit-btn" class="btn-primary flex items-center gap-2" disabled>
+                <span>Analyze Image</span>
+                <span id="image-loading" class="loader" style="display:none;width:18px;height:18px;border-width:2px"></span>
+              </button>
+              <button type="button" id="webcam-btn" onclick="startWebcam()" class="btn-primary flex items-center gap-2" style="background:rgba(59,130,246,0.2);border:1px solid rgba(59,130,246,0.4);color:#60A5FA">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span>Use Webcam</span>
+              </button>
+              <span id="image-error-msg" class="text-red-400 text-sm font-mono hidden"></span>
+            </div>
+            <!-- Webcam modal -->
+            <div id="webcam-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.8)">
+              <div class="bg-bg-card rounded-xl p-6 border border-txt-muted/20 max-w-lg w-full mx-4">
+                <div class="flex items-center justify-between mb-4">
+                  <span class="font-bold text-txt-primary">Webcam Capture</span>
+                  <button type="button" onclick="stopWebcam()" class="text-txt-muted hover:text-red-400 text-2xl">&times;</button>
+                </div>
+                <video id="webcam-video" class="w-full rounded-lg mb-4" autoplay playsinline></video>
+                <canvas id="webcam-canvas" class="hidden"></canvas>
+                <div class="flex gap-3">
+                  <button type="button" onclick="captureWebcam()" class="btn-primary flex-1">Capture & Analyze</button>
+                  <button type="button" onclick="stopWebcam()" class="flex-1 px-4 py-2 rounded-lg border border-txt-muted/30 text-txt-secondary hover:bg-bg-secondary transition-colors">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
 
         <div class="flex flex-wrap gap-6 text-sm text-txt-muted">
           <div class="flex items-center gap-2">
@@ -170,11 +235,19 @@
           </div>
         </div>
         <!-- Image -->
-        <div class="card-glow card-construction">
-          <svg class="w-10 h-10 mx-auto text-txt-muted mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          <p class="font-bold mb-1">Image</p>
-          <p class="text-txt-muted text-sm mb-3">Splicing, GAN/diffusion detection</p>
-          <span class="badge badge-construction mx-auto">IN CONSTRUCTION</span>
+        <div class="card card-glow border-accent/30 relative overflow-hidden">
+          <div class="absolute top-0 left-0 w-full h-1 bg-accent"></div>
+          <div class="flex items-center gap-2 mb-3">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span class="font-bold">Image</span>
+            <span class="badge badge-human ml-auto text-[10px]">ONLINE</span>
+          </div>
+          <p class="text-txt-muted text-sm">AI-generated + tampering detection</p>
+          <div class="mt-3 flex gap-1">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent">AI Det</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">Tamper</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400">ONNX</span>
+          </div>
         </div>
         <!-- Video -->
         <div class="card-glow card-construction">
@@ -240,13 +313,13 @@
       <div class="font-mono text-xs">DeepVerify — Multimedia Forensic Analysis</div>
       <div class="flex items-center gap-4">
         <span class="flex items-center gap-1"><span class="status-dot active" style="width:6px;height:6px"></span> Text model active</span>
-        <span class="flex items-center gap-1"><span class="status-dot off" style="width:6px;height:6px"></span> Image model</span>
+        <span class="flex items-center gap-1"><span class="status-dot active" style="width:6px;height:6px"></span> Image (AI + Tamper)</span>
         <span class="flex items-center gap-1"><span class="status-dot off" style="width:6px;height:6px"></span> Video model</span>
         <span class="flex items-center gap-1"><span class="status-dot off" style="width:6px;height:6px"></span> Audio model</span>
       </div>
     </div>
   </footer>
 
-  <script src="/static/js/app.js?v=3"></script>
+  <script src="/static/js/app.js?v=10"></script>
 </body>
 </html>

@@ -61,6 +61,11 @@ def pixel_f1(pred: np.ndarray, target: np.ndarray, thresh: float = 0.5) -> float
 
 def summarize(labels, scores, prefix: str = "") -> dict:
     labels, scores = np.asarray(labels), np.asarray(scores)
+    nan_mask = np.isnan(scores)
+    if nan_mask.any():
+        print(f"  WARNING: {nan_mask.sum()} NaN scores replaced with 0.5")
+        scores = scores.copy()
+        scores[nan_mask] = 0.5
     return {
         f"{prefix}auc": auc_roc(labels, scores),
         f"{prefix}f1": f1(labels, scores),
@@ -68,3 +73,30 @@ def summarize(labels, scores, prefix: str = "") -> dict:
         f"{prefix}tpr@1%fpr": tpr_at_fpr(labels, scores),
         f"{prefix}acc": float(((scores >= 0.5) == labels.astype(bool)).mean()),
     }
+
+
+def summarize_multiclass(labels, probs, prefix: str = "", class_names=None) -> dict:
+    labels, probs = np.asarray(labels), np.asarray(probs)
+    if class_names is None:
+        class_names = ["real", "tampered", "ai_generated"]
+    n_classes = probs.shape[1]
+
+    nan_mask = np.isnan(probs).any(axis=1)
+    if nan_mask.any():
+        print(f"  WARNING: {nan_mask.sum()} NaN predictions replaced with uniform")
+        probs = probs.copy()
+        probs[nan_mask] = 1.0 / n_classes
+
+    preds = probs.argmax(axis=1)
+    result = {f"{prefix}acc": float((preds == labels).mean())}
+
+    for i, name in enumerate(class_names[:n_classes]):
+        binary_labels = (labels == i).astype(int)
+        class_scores = probs[:, i]
+        result[f"{prefix}auc_{name}"] = auc_roc(binary_labels, class_scores)
+        result[f"{prefix}f1_{name}"] = f1(binary_labels, class_scores)
+
+    result[f"{prefix}auc_macro"] = float(np.nanmean([
+        result[f"{prefix}auc_{name}"] for name in class_names[:n_classes]
+    ]))
+    return result

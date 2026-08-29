@@ -192,6 +192,7 @@ code, .font-mono { font-family: 'Fira Code', monospace; }
 }
 .badge-ai { background: rgba(239,68,68,0.15); color: #F87171; border: 1px solid rgba(239,68,68,0.3); }
 .badge-human { background: rgba(34,197,94,0.15); color: #4ADE80; border: 1px solid rgba(34,197,94,0.3); }
+.badge-uncertain { background: rgba(251,191,36,0.15); color: #FCD34D; border: 1px solid rgba(251,191,36,0.3); }
 .badge-construction { background: rgba(245,158,11,0.15); color: #FBBF24; border: 1px solid rgba(245,158,11,0.3); }
 
 .score-bar {
@@ -258,3 +259,33 @@ code, .font-mono { font-family: 'Fira Code', monospace; }
 .progress-ring circle {
   transition: stroke-dashoffset 1s ease-out;
 }
+
+/* Tabs */
+.tab-btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Fira Sans', sans-serif;
+}
+.tab-btn:hover {
+  color: var(--text-secondary);
+  background: rgba(34, 197, 94, 0.05);
+}
+.tab-btn.active {
+  color: var(--accent);
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* Drop zone */
+#drop-zone.dragover {
+  border-color: var(--accent) !important;
+  background: rgba(34, 197, 94, 0.05);
+}
+#drop-zone.dragover svg { color: var(--accent); }

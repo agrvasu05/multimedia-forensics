@@ -26,7 +26,7 @@ from ..preprocessing.image_ops import (compute_ela, srm_residuals, dct_features,
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-IMG_CLASSES = {"real": 0, "tampered": 1, "ai_generated": 2}
+IMG_CLASSES = {"real": 0, "tampered": 1}
 
 
 def _to_chw(a: np.ndarray) -> torch.Tensor:
@@ -278,8 +278,7 @@ def _augment_audio(wav: np.ndarray, sr: int) -> np.ndarray:
 # --------------------------------------------------------------------------
 
 def make_synthetic_image_dataset(root: str | Path, n_per_class: int = 24, size: int = 256):
-    """'real' = smooth gradients+noise; 'tampered' = same with a pasted patch
-    (mask saved); 'ai_generated' = periodic frequency-artifact textures."""
+    """'real' = smooth gradients+noise; 'tampered' = same with a pasted patch (mask saved)."""
     from PIL import Image
 
     rng = np.random.default_rng(0)
@@ -301,13 +300,6 @@ def make_synthetic_image_dataset(root: str | Path, n_per_class: int = 24, size: 
             mask[y:y + w, x:x + w] = 255
             Image.fromarray(tampered).save(root / split / "tampered" / f"t{k}.jpg", quality=90)
             Image.fromarray(mask).save(root / split / "masks" / f"t{k}.png")
-
-            xx, yy = np.meshgrid(np.arange(size), np.arange(size))
-            freq = rng.uniform(0.2, 0.6, 2)
-            ai = (127 + 90 * np.sin(freq[0] * xx) * np.cos(freq[1] * yy))
-            ai = np.stack([ai] * 3, -1) + rng.normal(0, 4, (size, size, 3))
-            Image.fromarray(np.clip(ai, 0, 255).astype(np.uint8)).save(
-                root / split / "ai_generated" / f"g{k}.jpg", quality=90)
 
 
 def _gradient_image(rng, size: int) -> np.ndarray:

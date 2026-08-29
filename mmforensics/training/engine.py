@@ -1,7 +1,5 @@
-"""Generic training engine implementing the plan's optimization setup:
-AdamW, cosine decay with warm-up, label smoothing, mixed precision,
-progressive unfreezing, early stopping on validation AUC, and optional
-Weights & Biases / MLflow logging."""
+"""Training engine: AdamW with differential LR, cosine warm-up,
+progressive unfreezing, early stopping on val AUC, optional W&B/MLflow."""
 from __future__ import annotations
 
 import json
@@ -13,30 +11,30 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from .metrics import summarize
+from .metrics import summarize, summarize_multiclass
 
 
 @dataclass
 class TrainConfig:
     epochs: int = 20
-    lr: float = 3e-4
+    lr: float = 1e-4
+    backbone_lr_scale: float = 0.1
     weight_decay: float = 1e-4
     warmup_epochs: int = 1
     label_smoothing: float = 0.05
     early_stop_patience: int = 7
-    freeze_backbone_epochs: int = 2      # progressive unfreezing
+    freeze_backbone_epochs: int = 2
     grad_clip: float = 1.0
     amp: bool = True
     out_dir: str = "checkpoints"
     run_name: str = "run"
-    tracker: str | None = None           # "wandb" | "mlflow" | None
+    tracker: str | None = None
     extra: dict = field(default_factory=dict)
 
 
 class Tracker:
-    """Thin wrapper over wandb/mlflow; always mirrors metrics to a JSONL file."""
-
     def __init__(self, cfg: TrainConfig):
         self.cfg = cfg
         self.path = Path(cfg.out_dir) / f"{cfg.run_name}_log.jsonl"
@@ -45,7 +43,6 @@ class Tracker:
         if cfg.tracker == "wandb":
             try:
                 import wandb
-
                 wandb.init(project="mmforensics", name=cfg.run_name, config=asdict(cfg))
                 self.backend = wandb
             except Exception:
@@ -53,7 +50,6 @@ class Tracker:
         elif cfg.tracker == "mlflow":
             try:
                 import mlflow
-
                 mlflow.start_run(run_name=cfg.run_name)
                 mlflow.log_params({k: str(v) for k, v in asdict(cfg).items()})
                 self.backend = mlflow
@@ -84,31 +80,56 @@ def cosine_warmup_lr(optimizer, epoch: float, cfg: TrainConfig):
         t = (epoch - cfg.warmup_epochs) / max(cfg.epochs - cfg.warmup_epochs, 1)
         scale = 0.5 * (1 + math.cos(math.pi * min(t, 1.0)))
     for g in optimizer.param_groups:
-        g["lr"] = cfg.lr * scale
+        base = g.get("base_lr", cfg.lr)
+        g["lr"] = base * scale
 
 
-def set_backbone_frozen(model: torch.nn.Module, frozen: bool, backbone_attrs=("rgb", "spatial", "encoder")):
-    for attr in backbone_attrs:
+BACKBONE_ATTRS = ("rgb",)
+
+
+def set_backbone_frozen(model: torch.nn.Module, frozen: bool):
+    for attr in BACKBONE_ATTRS:
         bb = getattr(model, attr, None)
         if bb is not None:
             for p in bb.parameters():
                 p.requires_grad = not frozen
 
 
+def _is_backbone(param, model: torch.nn.Module) -> bool:
+    for attr in BACKBONE_ATTRS:
+        module = getattr(model, attr, None)
+        if module is not None:
+            for p in module.parameters():
+                if p is param:
+                    return True
+    return False
+
+
+def _build_param_groups(model, cfg: TrainConfig):
+    backbone_params = []
+    task_params = []
+    for p in model.parameters():
+        if not p.requires_grad:
+            continue
+        if _is_backbone(p, model):
+            backbone_params.append(p)
+        else:
+            task_params.append(p)
+    groups = []
+    if backbone_params:
+        groups.append({"params": backbone_params, "base_lr": cfg.lr * cfg.backbone_lr_scale})
+    if task_params:
+        groups.append({"params": task_params, "base_lr": cfg.lr})
+    return groups
+
+
 def train_classifier(model: torch.nn.Module, train_loader: DataLoader,
                      val_loader: DataLoader, cfg: TrainConfig,
                      forward_fn=None, device: str | None = None,
                      class_weights: torch.Tensor | None = None) -> dict:
-    """Train any binary/multiclass classifier.
-
-    forward_fn(model, batch, device) -> (logits, labels[, aux_loss]);
-    defaults to model(x) for (x, y) batches. Saves the best-val-AUC
-    checkpoint to {out_dir}/{run_name}.pt and returns the metric history.
-    """
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     model.to(device)
-    opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad),
-                            lr=cfg.lr, weight_decay=cfg.weight_decay)
+
     crit = torch.nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing,
                                      weight=class_weights.to(device) if class_weights is not None else None)
     scaler = torch.amp.GradScaler(enabled=cfg.amp and device.type == "cuda")
@@ -122,17 +143,23 @@ def train_classifier(model: torch.nn.Module, train_loader: DataLoader,
     best_auc, best_epoch, history = -1.0, -1, []
     out_path = Path(cfg.out_dir) / f"{cfg.run_name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    opt = None
 
     for epoch in range(cfg.epochs):
         set_backbone_frozen(model, frozen=epoch < cfg.freeze_backbone_epochs)
-        # rebuild optimizer param groups after (un)freezing
-        opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad),
-                                lr=cfg.lr, weight_decay=cfg.weight_decay)
+        groups = _build_param_groups(model, cfg)
+        opt = torch.optim.AdamW(groups, weight_decay=cfg.weight_decay)
         cosine_warmup_lr(opt, epoch, cfg)
+
+        frozen_params = sum(1 for p in model.parameters() if not p.requires_grad)
+        total_params = sum(1 for p in model.parameters())
+        lrs = [f"{g['lr']:.2e}" for g in opt.param_groups]
+        print(f"  frozen={frozen_params}/{total_params} LRs={lrs}")
 
         model.train()
         total_loss, n = 0.0, 0
-        for batch in train_loader:
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg.epochs} [Train]", leave=False)
+        for batch in pbar:
             opt.zero_grad(set_to_none=True)
             with torch.amp.autocast(device_type=device.type,
                                     enabled=cfg.amp and device.type == "cuda"):
@@ -141,6 +168,11 @@ def train_classifier(model: torch.nn.Module, train_loader: DataLoader,
                 loss = crit(logits, labels)
                 if len(out) > 2 and out[2] is not None:
                     loss = loss + out[2]
+
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"\n  SKIP batch: loss={loss.item()}")
+                continue
+
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
@@ -148,12 +180,13 @@ def train_classifier(model: torch.nn.Module, train_loader: DataLoader,
             scaler.update()
             total_loss += float(loss.detach()) * labels.shape[0]
             n += labels.shape[0]
+            pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{opt.param_groups[-1]['lr']:.2e}")
 
         val = evaluate_classifier(model, val_loader, forward_fn, device)
         metrics = {"epoch": epoch, "train_loss": total_loss / max(n, 1), **val}
         history.append(metrics)
         tracker.log(metrics, step=epoch)
-        print(f"[{cfg.run_name}] epoch {epoch}: loss={metrics['train_loss']:.4f} "
+        print(f"[{cfg.run_name}] epoch {epoch+1}/{cfg.epochs}: loss={metrics['train_loss']:.4f} "
               f"val_auc={val.get('val_auc', float('nan')):.4f}")
 
         auc = val.get("val_auc", float("nan"))
@@ -172,16 +205,26 @@ def train_classifier(model: torch.nn.Module, train_loader: DataLoader,
 @torch.no_grad()
 def evaluate_classifier(model, loader, forward_fn, device) -> dict:
     model.eval()
-    scores, labels = [], []
-    for batch in loader:
+    all_scores, all_labels = [], []
+    pbar = tqdm(loader, desc="  [Val]  ", leave=False)
+    for batch in pbar:
         out = forward_fn(model, batch, device)
         logits, y = out[0], out[1]
         if logits.ndim == 1 or logits.shape[-1] == 1:
             p = torch.sigmoid(logits.squeeze(-1))
+            all_scores.append(p.float().cpu().numpy())
         else:
-            p = torch.softmax(logits, dim=-1)[:, -1]  # P(last class = fake)
-        scores.append(p.float().cpu().numpy())
-        labels.append(y.cpu().numpy())
-    scores = np.concatenate(scores)
-    labels = (np.concatenate(labels) > 0).astype(int)
+            probs = torch.softmax(logits, dim=-1)
+            all_scores.append(probs.float().cpu().numpy())
+        all_labels.append(y.cpu().numpy())
+
+    scores = np.concatenate(all_scores)
+    labels = np.concatenate(all_labels).astype(int)
+
+    if scores.ndim == 2 and scores.shape[1] > 2:
+        return summarize_multiclass(labels, scores, prefix="val_")
+
+    if scores.ndim == 2:
+        scores = scores[:, -1]
+    labels = (labels > 0).astype(int)
     return summarize(labels, scores, prefix="val_")

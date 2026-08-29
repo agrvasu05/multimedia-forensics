@@ -5,7 +5,7 @@ RGB-content branch (EfficientNet/ViT via timm) + forensic-artifact branch
 statistics), fused into an MLP classifier with a U-Net-style decoder head
 for pixel-level tampering localization.
 
-Labels: 0 = real, 1 = tampered (splicing/copy-move/retouching), 2 = AI-generated.
+Labels: 0 = real, 1 = tampered (splicing/copy-move/retouching).
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-NUM_CLASSES = 3
-CLASS_NAMES = ["real", "tampered", "ai_generated"]
+NUM_CLASSES = 2
+CLASS_NAMES = ["real", "tampered"]
 
 
 class ArtifactCNN(nn.Module):
