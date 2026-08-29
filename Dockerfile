@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY mmforensics ./mmforensics
 COPY configs ./configs
+COPY static ./static
 # mount trained checkpoints at runtime: -v $(pwd)/checkpoints:/app/checkpoints
 
 EXPOSE 8000

@@ -26,6 +26,7 @@ def test_image_dataset_yields_7_channel_artifacts(tmp_path):
 
 
 def test_audio_augment_preserves_range():
+    pytest.importorskip("librosa")  # pitch/tempo augmentation needs librosa
     from mmforensics.training.datasets import _augment_audio
 
     sr = 16000

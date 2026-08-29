@@ -1,19 +1,20 @@
 """FastAPI inference gateway.
 
-Unified /analyze endpoint: accepts any supported file (image / video / audio
-/ text), auto-detects its type, routes it through the right pipeline(s), and
-returns label + confidence + localization/spans + a natural-language
-explanation. Run with:
+Endpoints: POST /analyze/image (multipart image; mode=ai|tamper|both|screen
+routes the ONNX detection heads), POST /analyze/text, GET /models (deployed
+checkpoint inventory), GET /health. Responses carry label + confidence +
+an explanation string. Run with:
 
     uvicorn mmforensics.api.main:app --reload
 """
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, HTTPException, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,11 +37,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+logger = logging.getLogger("uvicorn.error")
+
+# Anchored to this file so the app works regardless of the working directory
+# uvicorn is launched from.
+ROOT = Path(__file__).resolve().parents[2]
+STATIC_DIR = ROOT / "static"
+CHECKPOINT_DIR = ROOT / "checkpoints"
+
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 _ai_detector = None
 _tamper_detector = None
 _screen_detector = None
+_orchestrator = None
+
+
+def _get_orchestrator():
+    """Singleton orchestrator — the text pipeline (~313 MB) must not be
+    reloaded on every request."""
+    global _orchestrator
+    if _orchestrator is None:
+        from ..fusion import ForensicOrchestrator
+
+        _orchestrator = ForensicOrchestrator(checkpoint_dir=CHECKPOINT_DIR)
+    return _orchestrator
 
 
 def _get_ai_detector():
@@ -92,32 +114,65 @@ def health():
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/models")
+def models():
+    """Deployed checkpoint inventory (A/B hook): which modality heads are
+    available on disk right now."""
+    def existing(*rel: str) -> list[str]:
+        return [r for r in rel if (CHECKPOINT_DIR / r).exists()]
+
+    image_files = existing("image_tampering/model_cls.onnx",
+                           "image_screen/model.onnx",
+                           "image_ai/capcheck_model.onnx")
+    text_ok = bool(existing("text/model.safetensors", "text/pytorch_model.bin"))
+    return {
+        "image": {"deployed": bool(image_files), "checkpoints": image_files},
+        "video": {"deployed": bool(existing("video.pt")),
+                  "checkpoints": existing("video.pt")},
+        "audio": {"deployed": bool(existing("audio.pt")),
+                  "checkpoints": existing("audio.pt")},
+        "text": {"deployed": text_ok,
+                 "checkpoints": ["text/"] if text_ok else []},
+    }
+
+
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse("static/index.html")
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.post("/analyze/text")
 def analyze_text(req: TextRequest):
-    from ..fusion import ForensicOrchestrator
     from ..explainability import explain_report
-    orch = ForensicOrchestrator(checkpoint_dir=Path("checkpoints"))
-    report = orch.analyze_text(req.text)
+
+    report = _get_orchestrator().analyze_text(req.text)
     report["explanation"] = explain_report(report)
     return _jsonable(report)
 
 
+VALID_IMAGE_MODES = ("ai", "tamper", "both", "screen")
+
+
 @app.post("/analyze/image")
 async def analyze_image(file: UploadFile = File(...), mode: str = Form("ai")):
-    from PIL import Image
+    from PIL import Image, UnidentifiedImageError
     import base64, io
+
+    if mode not in VALID_IMAGE_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"mode must be one of {', '.join(VALID_IMAGE_MODES)}; got {mode!r}")
 
     suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(await file.read())
         tmp_path = Path(tmp.name)
     try:
-        image = Image.open(tmp_path).convert("RGB")
+        try:
+            image = Image.open(tmp_path).convert("RGB")
+        except UnidentifiedImageError:
+            raise HTTPException(status_code=400,
+                                detail=f"not a readable image: {file.filename!r}")
         result = {"file": file.filename, "mode": mode}
 
         if mode in ("tamper", "both"):

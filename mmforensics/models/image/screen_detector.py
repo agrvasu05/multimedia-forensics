@@ -28,6 +28,9 @@ class ScreenDetectorORT:
     STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     THRESHOLD = 0.49
 
+    # Repo-root anchored so the checkpoint is found regardless of CWD
+    CKPT_ROOT = Path(__file__).resolve().parents[3] / "checkpoints"
+
     def __init__(self, model_path: str | Path | None = None):
         if not HAS_ORT:
             raise ImportError("pip install onnxruntime")
@@ -35,7 +38,7 @@ class ScreenDetectorORT:
             raise ImportError("pip install pillow")
 
         if model_path is None:
-            model_path = Path("checkpoints/image_screen/model.onnx")
+            model_path = self.CKPT_ROOT / "image_screen" / "model.onnx"
         model_path = Path(model_path)
 
         self.session = ort.InferenceSession(

@@ -31,33 +31,76 @@ def test_analyze_text_endpoint(client):
     assert "explanation" in body and 0.0 <= body["p_ai"] <= 1.0
 
 
-def test_analyze_image_endpoint(client, tmp_path):
+class _FakeTamperDetector:
+    def predict(self, image):
+        return {"label": "tampered", "confidence": 0.83,
+                "p_tampered": 0.83, "p_real": 0.17}
+
+
+class _FakeAIDetector:
+    def predict(self, image):
+        return {"label": "ai_generated", "confidence": 0.91,
+                "p_ai": 0.91, "p_real": 0.09}
+
+
+class _FakeScreenDetector:
+    def predict(self, image):
+        return {"label": "real_photo", "confidence": 0.88,
+                "p_screen": 0.12, "p_real": 0.88}
+
+
+@pytest.fixture()
+def fake_detectors(monkeypatch):
+    """Hermetic image-mode tests: no ONNX session / model download."""
+    from mmforensics.api import main
+
+    monkeypatch.setattr(main, "_get_tamper_detector", lambda: _FakeTamperDetector())
+    monkeypatch.setattr(main, "_get_ai_detector", lambda: _FakeAIDetector())
+    monkeypatch.setattr(main, "_get_screen_detector", lambda: _FakeScreenDetector())
+
+
+def _png_bytes() -> bytes:
+    import io
     from PIL import Image
 
     rng = np.random.default_rng(0)
     arr = (rng.random((128, 128, 3)) * 255).astype(np.uint8)
-    p = tmp_path / "x.jpg"
-    Image.fromarray(arr).save(p)
-    with p.open("rb") as f:
-        r = client.post("/analyze", files={"file": ("x.jpg", f, "image/jpeg")})
+    buf = io.BytesIO()
+    Image.fromarray(arr).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_analyze_image_endpoint(client, fake_detectors):
+    r = client.post("/analyze/image",
+                    files={"file": ("x.png", _png_bytes(), "image/png")},
+                    data={"mode": "both"})
     assert r.status_code == 200
     body = r.json()
-    assert body["modality"] == "image"
-    assert body["label"] in {"real", "tampered", "ai_generated"}
-    assert "localization_mask" in body  # summarized dict, not raw array
+    assert body["mode"] == "both"
+    assert body["tamper_detection"]["label"] in {"real", "tampered"}
+    assert body["ai_detection"]["label"] in {"real", "ai_generated", "uncertain"}
+    assert "explanation" in body and "Tamper" in body["explanation"]
 
 
-def test_analyze_audio_endpoint(client, tmp_path):
-    import soundfile as sf
-
-    sr = 16000
-    t = np.arange(sr * 2) / sr
-    wav = (0.4 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
-    p = tmp_path / "tone.wav"
-    sf.write(p, wav, sr)
-    with p.open("rb") as f:
-        r = client.post("/analyze", files={"file": ("tone.wav", f, "audio/wav")})
+def test_analyze_image_screen_mode(client, fake_detectors):
+    r = client.post("/analyze/image",
+                    files={"file": ("x.png", _png_bytes(), "image/png")},
+                    data={"mode": "screen"})
     assert r.status_code == 200
     body = r.json()
-    assert body["modality"] == "audio"
-    assert body["label"] in {"bonafide", "ai_generated"}
+    assert body["screen_detection"]["label"] in {"real_photo", "screen"}
+    assert "Screen" in body["explanation"]
+
+
+def test_analyze_image_invalid_mode(client, fake_detectors):
+    r = client.post("/analyze/image",
+                    files={"file": ("x.png", _png_bytes(), "image/png")},
+                    data={"mode": "bogus"})
+    assert r.status_code == 422
+
+
+def test_analyze_image_rejects_non_image(client):
+    r = client.post("/analyze/image",
+                    files={"file": ("notes.txt", b"definitely not an image", "text/plain")},
+                    data={"mode": "ai"})
+    assert r.status_code == 400

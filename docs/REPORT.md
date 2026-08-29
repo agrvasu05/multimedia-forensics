@@ -153,9 +153,11 @@ scripts pointed at a different `--data`).
 
 ## 6. Serving & deployment (plan §11)
 
-- FastAPI gateway (`api/main.py`): `POST /analyze` (any file, multipart),
-  `POST /analyze/text`, `GET /health`. Responses carry label, confidence,
-  per-branch scores, summarized localization, and an `explanation` string.
+- FastAPI gateway (`api/main.py`): `POST /analyze/image` (multipart image;
+  `mode=ai|tamper|both|screen` routes the ONNX detection heads),
+  `POST /analyze/text`, `GET /models` (deployed checkpoint inventory),
+  `GET /health`. Responses carry label, confidence, per-branch scores,
+  and an `explanation` string.
 - Checkpoints are discovered from `checkpoints/` at startup; missing heads
   degrade gracefully with an explicit `warning` in the response contract.
 - `Dockerfile` + `docker-compose.yml` containerize the service (ffmpeg +
@@ -164,10 +166,12 @@ scripts pointed at a different `--data`).
 
 ## 7. Verification status
 
-- 24/24 unit + integration tests pass (`pytest`): preprocessing features
+- Unit + integration tests (`pytest`): preprocessing features
   (incl. PRNU), all model forward passes, augmentations, lip-sync scoring,
   fusion rules, metrics, ONNX export parity, and live API calls for
-  text/image/audio uploads plus the `/models` inventory endpoint.
+  text/image uploads plus the `/models` inventory endpoint. The two audio
+  front-end tests skip automatically when the optional `librosa` dependency
+  is not installed.
 - All four `--smoke` training runs complete end to end and write checkpoints.
 
 ### 7.1 Second-pass gap closure

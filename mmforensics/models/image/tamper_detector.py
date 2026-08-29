@@ -11,6 +11,9 @@ from pathlib import Path
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
+# Repo-root anchored so the checkpoint is found regardless of CWD
+CKPT_ROOT = Path(__file__).resolve().parents[3] / "checkpoints"
+
 
 class TamperDetectorORT:
     """ONNX Runtime image tampering detector."""
@@ -22,7 +25,7 @@ class TamperDetectorORT:
                                                 dct_features, prnu_residual)
 
         if checkpoint is None:
-            checkpoint = Path("checkpoints/image_tampering/model_cls.onnx")
+            checkpoint = CKPT_ROOT / "image_tampering" / "model_cls.onnx"
         checkpoint = Path(checkpoint)
 
         providers = ["CPUExecutionProvider"]

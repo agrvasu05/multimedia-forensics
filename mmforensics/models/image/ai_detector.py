@@ -29,6 +29,10 @@ class AIDetectorORT:
     MEAN = np.array([0.5, 0.5, 0.5], dtype=np.float32)
     STD = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 
+    # Path constant only — no training/downloads happen here; the trained
+    # checkpoint in checkpoints/image_ai/ is reused when present.
+    CKPT_ROOT = Path(__file__).resolve().parents[3] / "checkpoints"
+
     def __init__(self, model_path: str | Path | None = None):
         if not HAS_ORT:
             raise ImportError("pip install onnxruntime")
@@ -48,7 +52,7 @@ class AIDetectorORT:
 
     def _download_model(self) -> Path:
         from huggingface_hub import hf_hub_download
-        cache_dir = Path("checkpoints") / "image_ai"
+        cache_dir = self.CKPT_ROOT / "image_ai"
         cache_dir.mkdir(parents=True, exist_ok=True)
         onnx_path = cache_dir / "capcheck_model.onnx"
         if onnx_path.exists():

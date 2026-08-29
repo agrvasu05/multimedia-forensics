@@ -35,8 +35,9 @@ Run the API:
 
 ```bash
 uvicorn mmforensics.api.main:app --reload
-# POST /analyze        (multipart file upload — any supported type)
+# POST /analyze/image  (multipart image; mode=ai|tamper|both|screen)
 # POST /analyze/text   ({"text": "..."})
+# GET  /models         (deployed checkpoint inventory)
 # GET  /health
 ```
 
@@ -127,7 +128,7 @@ mmforensics/
 │   └── audio/        LCNN, RawNet2, Wav2Vec2 branch, music CNN + pipeline
 ├── fusion/           orchestrator: routing + video/audio noisy-OR fusion
 ├── explainability/   Grad-CAM, mask overlays, natural-language explanations
-├── api/              FastAPI gateway (/analyze, /analyze/text)
+├── api/              FastAPI gateway (/analyze/image, /analyze/text, /models)
 └── training/         engine (AdamW/cosine/AMP/unfreezing), datasets, metrics, 4 train scripts
 scripts/              dataset registry/fetch/arrange, CLI demo
 configs/              default hyperparameters per modality

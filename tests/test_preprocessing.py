@@ -48,6 +48,7 @@ def test_text_ops():
 
 
 def test_audio_features():
+    pytest.importorskip("librosa")  # mel/lfcc front-ends need librosa
     sr = 16000
     t = np.arange(sr) / sr
     wav = np.sin(2 * np.pi * 220 * t).astype(np.float32)

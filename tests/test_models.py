@@ -11,7 +11,7 @@ def test_dual_branch_image_forward():
     art = torch.randn(2, 7, 128, 128)
     dct = torch.randn(2, 18)
     logits, mask = model(rgb, art, dct)
-    assert logits.shape == (2, 3)
+    assert logits.shape == (2, 2)  # real / tampered (AI detection split into ONNX AIDetector)
     assert mask.shape == (2, 1, 128, 128)
 
 
